@@ -5,8 +5,16 @@ import type { TabName } from "../App";
 import CommentsDrawer from "../components/CommentsDrawer";
 import PostCard from "../components/PostCard";
 import StoriesRow from "../components/StoriesRow";
+import StoryCreate from "../components/StoryCreate";
+import StoryViewer from "../components/StoryViewer";
 import { useActor } from "../hooks/useActor";
-import type { FullBackendInterface, PostView, Story } from "../types/backend";
+import { useInternetIdentity } from "../hooks/useInternetIdentity";
+import { useStorageConfig } from "../hooks/useStorageConfig";
+import type {
+  FullBackendInterface,
+  PostView,
+  StoryView,
+} from "../types/backend";
 
 const SAMPLE_POSTS: PostView[] = [
   {
@@ -57,9 +65,15 @@ interface HomeScreenProps {
 export default function HomeScreen({ onNavigate }: HomeScreenProps) {
   const { actor: rawActor, isFetching: actorFetching } = useActor();
   const actor = rawActor as unknown as FullBackendInterface | null;
+  const { identity } = useInternetIdentity();
+  const storageConfig = useStorageConfig();
+
   const [activeCommentPostId, setActiveCommentPostId] = useState<bigint | null>(
     null,
   );
+  const [storyViewerOpen, setStoryViewerOpen] = useState(false);
+  const [viewerInitialIndex, setViewerInitialIndex] = useState(0);
+  const [storyCreateOpen, setStoryCreateOpen] = useState(false);
 
   const {
     data: feed = [],
@@ -76,17 +90,28 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
     placeholderData: keepPreviousData,
   });
 
-  const { data: stories = [] } = useQuery<Story[]>({
-    queryKey: ["stories"],
-    queryFn: async () => {
-      if (!actor) return [];
-      return actor.getActiveStories();
+  const { data: stories = [], refetch: refetchStories } = useQuery<StoryView[]>(
+    {
+      queryKey: ["stories"],
+      queryFn: async () => {
+        if (!actor) return [];
+        return actor.getActiveStories();
+      },
+      enabled: !!actor && !actorFetching,
+      staleTime: 30_000,
     },
-    enabled: !!actor && !actorFetching,
-    staleTime: 30_000,
-  });
+  );
 
   const displayPosts = feed.length > 0 ? feed : SAMPLE_POSTS;
+
+  const handleStoryClick = (_story: StoryView, idx: number) => {
+    setViewerInitialIndex(idx);
+    setStoryViewerOpen(true);
+  };
+
+  const handleAddStory = () => {
+    setStoryCreateOpen(true);
+  };
 
   return (
     <div className="flex flex-col min-h-full">
@@ -150,7 +175,14 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
       </header>
 
       {/* Stories Row */}
-      <StoriesRow stories={stories} />
+      <StoriesRow
+        stories={stories}
+        storageGatewayUrl={storageConfig.storageGatewayUrl}
+        backendCanisterId={storageConfig.backendCanisterId}
+        projectId={storageConfig.projectId}
+        onStoryClick={handleStoryClick}
+        onAddStory={handleAddStory}
+      />
 
       {/* Divider */}
       <div
@@ -233,6 +265,30 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
         postId={activeCommentPostId}
         open={activeCommentPostId !== null}
         onClose={() => setActiveCommentPostId(null)}
+      />
+
+      {/* Story Viewer */}
+      {storyViewerOpen && stories.length > 0 && (
+        <StoryViewer
+          stories={stories}
+          initialIndex={viewerInitialIndex}
+          onClose={() => setStoryViewerOpen(false)}
+          myPrincipal={identity?.getPrincipal()}
+          actor={actor}
+          storageConfig={{
+            storageGatewayUrl: storageConfig.storageGatewayUrl,
+            backendCanisterId: storageConfig.backendCanisterId,
+            projectId: storageConfig.projectId,
+          }}
+        />
+      )}
+
+      {/* Story Create */}
+      <StoryCreate
+        open={storyCreateOpen}
+        onClose={() => setStoryCreateOpen(false)}
+        onCreated={() => void refetchStories()}
+        actor={actor}
       />
     </div>
   );

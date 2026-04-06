@@ -25,6 +25,8 @@ actor {
     username : Text;
     bio : Text;
     avatarBlobKey : Text;
+    website : Text;
+    location : Text;
     createdAt : Int;
   };
 
@@ -57,6 +59,55 @@ actor {
     id : Nat;
     author : Principal;
     imageBlobKey : Text;
+    videoBlobKey : Text;
+    viewerList : [Principal];
+    reactions : [StoryReaction];
+    sticker : ?StorySticker;
+    createdAt : Int;
+  };
+
+  public type StoryReaction = {
+    viewer : Principal;
+    emoji : Text;
+  };
+
+  public type StorySticker = {
+    #poll : PollSticker;
+    #question : QuestionSticker;
+  };
+
+  public type PollSticker = {
+    question : Text;
+    optionA : Text;
+    optionB : Text;
+    votesA : [Principal];
+    votesB : [Principal];
+  };
+
+  public type QuestionSticker = {
+    question : Text;
+    answers : [{ viewer : Principal; answer : Text }];
+  };
+
+  public type StoryView = {
+    id : Nat;
+    author : Principal;
+    imageBlobKey : Text;
+    videoBlobKey : Text;
+    viewerList : [Principal];
+    reactions : [StoryReaction];
+    sticker : ?StorySticker;
+    createdAt : Int;
+    authorUsername : Text;
+    authorAvatarBlobKey : Text;
+  };
+
+  public type Highlight = {
+    id : Nat;
+    owner : Principal;
+    title : Text;
+    coverBlobKey : Text;
+    storyIds : [Nat];
     createdAt : Int;
   };
 
@@ -130,6 +181,7 @@ actor {
   var nextMessageId = 0;
   var nextNotificationId = 0;
   var nextReelId = 0;
+  var nextHighlightId = 0;
 
   let profiles = Map.empty<Principal, Profile>();
   let posts = Map.empty<Nat, Post>();
@@ -141,6 +193,7 @@ actor {
   let follows = Map.empty<Principal, [Principal]>();
   let messages = Map.empty<Nat, Message>();
   let notifications = Map.empty<Nat, Notification>();
+  let highlights = Map.empty<Nat, Highlight>();
 
   // ---- Helpers ----
 
@@ -192,6 +245,24 @@ actor {
     };
   };
 
+  func getStoryView(story : Story) : StoryView {
+    let authorProfile = profiles.get(story.author);
+    let authorUsername = switch (authorProfile) { case null { "" }; case (?p) { p.username } };
+    let authorAvatar = switch (authorProfile) { case null { "" }; case (?p) { p.avatarBlobKey } };
+    {
+      id = story.id;
+      author = story.author;
+      imageBlobKey = story.imageBlobKey;
+      videoBlobKey = story.videoBlobKey;
+      viewerList = story.viewerList;
+      reactions = story.reactions;
+      sticker = story.sticker;
+      createdAt = story.createdAt;
+      authorUsername;
+      authorAvatarBlobKey = authorAvatar;
+    };
+  };
+
   func addNotification(notificationType : NotificationType, from : Principal, to : Principal, postId : ?Nat, text : ?Text) {
     let id = nextNotificationId;
     nextNotificationId += 1;
@@ -210,13 +281,13 @@ actor {
 
   // ---- Profile API (Required by frontend) ----
 
-  public shared ({ caller }) func saveCallerUserProfile(username : Text, bio : Text, avatarBlobKey : Text) : async () {
+  public shared ({ caller }) func saveCallerUserProfile(username : Text, bio : Text, avatarBlobKey : Text, website : Text, location : Text) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can save profiles");
     };
     let existing = profiles.get(caller);
     let createdAt = switch (existing) { case null { Time.now() }; case (?p) { p.createdAt } };
-    profiles.add(caller, { owner = caller; username; bio; avatarBlobKey; createdAt });
+    profiles.add(caller, { owner = caller; username; bio; avatarBlobKey; website; location; createdAt });
   };
 
   public query ({ caller }) func getCallerUserProfile() : async ?Profile {
@@ -238,13 +309,13 @@ actor {
 
   // ---- Legacy Profile API (kept for compatibility) ----
 
-  public shared ({ caller }) func upsertProfile(username : Text, bio : Text, avatarBlobKey : Text) : async () {
+  public shared ({ caller }) func upsertProfile(username : Text, bio : Text, avatarBlobKey : Text, website : Text, location : Text) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can save profiles");
     };
     let existing = profiles.get(caller);
     let createdAt = switch (existing) { case null { Time.now() }; case (?p) { p.createdAt } };
-    profiles.add(caller, { owner = caller; username; bio; avatarBlobKey; createdAt });
+    profiles.add(caller, { owner = caller; username; bio; avatarBlobKey; website; location; createdAt });
   };
 
   public query ({ caller }) func getProfile(user : Principal) : async ?Profile {
@@ -303,7 +374,7 @@ actor {
         if (Principal.equal(post.author, caller) or AccessControl.isAdmin(accessControlState, caller)) {
           posts.remove(id);
           true;
-        } else { 
+        } else {
           Runtime.trap("Unauthorized: Can only delete your own posts");
         };
       };
@@ -352,7 +423,7 @@ actor {
         if (Principal.equal(reel.author, caller) or AccessControl.isAdmin(accessControlState, caller)) {
           reels.remove(id);
           true;
-        } else { 
+        } else {
           Runtime.trap("Unauthorized: Can only delete your own reels");
         };
       };
@@ -461,7 +532,7 @@ actor {
         if (Principal.equal(c.author, caller) or AccessControl.isAdmin(accessControlState, caller)) {
           comments.remove(id);
           true;
-        } else { 
+        } else {
           Runtime.trap("Unauthorized: Can only delete your own comments");
         };
       };
@@ -513,24 +584,245 @@ actor {
 
   // ---- Story API ----
 
-  public shared ({ caller }) func createStory(imageBlobKey : Text) : async Nat {
+  public shared ({ caller }) func createStory(imageBlobKey : Text, videoBlobKey : Text) : async Nat {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can create stories");
     };
     let id = nextStoryId;
     nextStoryId += 1;
-    stories.add(id, { id; author = caller; imageBlobKey; createdAt = Time.now() });
+    let story = {
+      id;
+      author = caller;
+      imageBlobKey;
+      videoBlobKey;
+      viewerList = [];
+      reactions = [];
+      sticker = null;
+      createdAt = Time.now();
+    };
+    stories.add(id, story);
     id;
   };
 
-  public query ({ caller }) func getActiveStories() : async [Story] {
+  public query ({ caller }) func getActiveStories() : async [StoryView] {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can view stories");
     };
     let cutoff = Time.now() - 86_400_000_000_000;
     let all = stories.values().toArray();
     let active = all.filter(func(s) { s.createdAt > cutoff });
-    active.sort(func(a, b) { Int.compare(b.createdAt, a.createdAt) });
+    let storyViews = active.map(func(s) { getStoryView(s) });
+    storyViews.sort(func(a, b) { Int.compare(b.createdAt, a.createdAt) });
+  };
+
+  public shared ({ caller }) func viewStory(id : Nat) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view stories");
+    };
+    switch (stories.get(id)) {
+      case null {
+        Runtime.trap("Story not found");
+      };
+      case (?story) {
+        if (not principalInArray(story.viewerList, caller)) {
+          stories.add(id, { story with viewerList = story.viewerList.concat([caller]) });
+        };
+      };
+    };
+  };
+
+  public shared ({ caller }) func reactToStory(id : Nat, emoji : Text) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can react to stories");
+    };
+    switch (stories.get(id)) {
+      case null {
+        Runtime.trap("Story not found");
+      };
+      case (?story) {
+        let newReaction = { viewer = caller; emoji };
+        let filteredReactions = story.reactions.filter(func(r) { not Principal.equal(r.viewer, caller) });
+        stories.add(id, { story with reactions = filteredReactions.concat([newReaction]) });
+      };
+    };
+  };
+
+  public shared ({ caller }) func votePoll(storyId : Nat, option : Text) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can vote in polls");
+    };
+    switch (stories.get(storyId)) {
+      case null {
+        Runtime.trap("Story not found");
+      };
+      case (?story) {
+        switch (story.sticker) {
+          case (?sticker) {
+            switch (sticker) {
+              case (#poll(pollSticker)) {
+                let inA = principalInArray(pollSticker.votesA, caller);
+                let inB = principalInArray(pollSticker.votesB, caller);
+                let joined = pollSticker.votesA.concat(pollSticker.votesB);
+                if (inA or inB) { Runtime.trap("Already voted") };
+                if (option == "A") {
+                  let newSticker = #poll({ pollSticker with votesA = pollSticker.votesA.concat([caller]) });
+                  stories.add(storyId, { story with sticker = ?newSticker });
+                } else if (option == "B") {
+                  let newSticker = #poll({ pollSticker with votesB = pollSticker.votesB.concat([caller]) });
+                  stories.add(storyId, { story with sticker = ?newSticker });
+                } else {
+                  Runtime.trap("Invalid option");
+                };
+              };
+              case (_) { Runtime.trap("No poll sticker") };
+            };
+          };
+          case (_) { Runtime.trap("No poll sticker") };
+        };
+      };
+    };
+  };
+
+  public shared ({ caller }) func answerQuestion(storyId : Nat, answer : Text) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can answer questions");
+    };
+    switch (stories.get(storyId)) {
+      case null {
+        Runtime.trap("Story not found");
+      };
+      case (?story) {
+        switch (story.sticker) {
+          case (?sticker) {
+            switch (sticker) {
+              case (#question(questionSticker)) {
+                let existing = questionSticker.answers.find(func(ans) { Principal.equal(ans.viewer, caller) });
+                switch (existing) {
+                  case (null) {
+                    let newAnswer = { viewer = caller; answer };
+                    let newAnswers = questionSticker.answers.concat([newAnswer]);
+                    let newSticker = #question({ questionSticker with answers = newAnswers });
+                    stories.add(storyId, { story with sticker = ?newSticker });
+                  };
+                  case (_) { Runtime.trap("Already answered") };
+                };
+              };
+              case (_) { Runtime.trap("Not a question sticker") };
+            };
+          };
+          case (_) { Runtime.trap("No question sticker") };
+        };
+      };
+    };
+  };
+
+  public query ({ caller }) func getStoryViewers(id : Nat) : async [Principal] {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view story viewers");
+    };
+    switch (stories.get(id)) {
+      case null { Runtime.trap("Story not found") };
+      case (?story) {
+        if (Principal.equal(story.author, caller)) {
+          story.viewerList;
+        } else {
+          Runtime.trap("Unauthorized: Can only view your own story viewers");
+        };
+      };
+    };
+  };
+
+  // ---- Highlight API ----
+
+  public shared ({ caller }) func createHighlight(title : Text, coverBlobKey : Text) : async Nat {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can create highlights");
+    };
+    let id = nextHighlightId;
+    nextHighlightId += 1;
+    let highlight = {
+      id;
+      owner = caller;
+      title;
+      coverBlobKey;
+      storyIds = [];
+      createdAt = Time.now();
+    };
+    highlights.add(id, highlight);
+    id;
+  };
+
+  public shared ({ caller }) func addStoryToHighlight(highlightId : Nat, storyId : Nat) : async Bool {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can add stories to highlights");
+    };
+    switch (highlights.get(highlightId)) {
+      case null {
+        Runtime.trap("Highlight not found");
+      };
+      case (?highlight) {
+        if (Principal.equal(highlight.owner, caller)) {
+          if (highlight.storyIds.find(func(id) { id == storyId }) != null) {
+            return false;
+          };
+          highlights.add(highlightId, { highlight with storyIds = highlight.storyIds.concat([storyId]) });
+          true;
+        } else {
+          Runtime.trap("Unauthorized: Can only add stories to your own highlights");
+        };
+      };
+    };
+  };
+
+  public shared ({ caller }) func removeStoryFromHighlight(highlightId : Nat, storyId : Nat) : async Bool {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can remove stories from highlights");
+    };
+    switch (highlights.get(highlightId)) {
+      case null { Runtime.trap("Highlight not found") };
+      case (?highlight) {
+        if (Principal.equal(highlight.owner, caller)) {
+          let filtered = highlight.storyIds.filter(func(id) { id != storyId });
+          highlights.add(highlightId, { highlight with storyIds = filtered });
+          true;
+        } else {
+          Runtime.trap("Unauthorized: Can only remove stories from your own highlights");
+        };
+      };
+    };
+  };
+
+  public shared ({ caller }) func deleteHighlight(id : Nat) : async Bool {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can delete highlights");
+    };
+    switch (highlights.get(id)) {
+      case null { false };
+      case (?highlight) {
+        if (Principal.equal(highlight.owner, caller) or AccessControl.isAdmin(accessControlState, caller)) {
+          highlights.remove(id);
+          true;
+        } else {
+          Runtime.trap("Unauthorized: Can only delete your own highlights");
+        };
+      };
+    };
+  };
+
+  public query ({ caller }) func getMyHighlights() : async [Highlight] {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view highlights");
+    };
+    let all = highlights.values().toArray();
+    all.filter(func(h) { Principal.equal(h.owner, caller) });
+  };
+
+  public query ({ caller }) func getHighlights(user : Principal) : async [Highlight] {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view highlights");
+    };
+    let all = highlights.values().toArray();
+    all.filter(func(h) { Principal.equal(h.owner, user) });
   };
 
   // ---- Feed API ----
@@ -567,9 +859,9 @@ actor {
       Runtime.trap("Unauthorized: Only users can view messages");
     };
     let all = messages.values().toArray();
-    all.filter(func(m) { 
-      (Principal.equal(m.sender, caller) and Principal.equal(m.receiver, user)) or 
-      (Principal.equal(m.sender, user) and Principal.equal(m.receiver, caller)) 
+    all.filter(func(m) {
+      (Principal.equal(m.sender, caller) and Principal.equal(m.receiver, user)) or
+      (Principal.equal(m.sender, user) and Principal.equal(m.receiver, caller))
     });
   };
 
@@ -628,7 +920,7 @@ actor {
         if (Principal.equal(n.to, caller)) {
           notifications.add(id, { n with read = true });
           true;
-        } else { 
+        } else {
           Runtime.trap("Unauthorized: Can only mark your own notifications as read");
         };
       };
@@ -659,7 +951,7 @@ actor {
         if (Principal.equal(n.to, caller) or AccessControl.isAdmin(accessControlState, caller)) {
           notifications.remove(id);
           true;
-        } else { 
+        } else {
           Runtime.trap("Unauthorized: Can only delete your own notifications");
         };
       };

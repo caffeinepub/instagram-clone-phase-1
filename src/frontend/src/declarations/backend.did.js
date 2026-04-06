@@ -24,11 +24,38 @@ export const UserRole = IDL.Variant({
   'user' : IDL.Null,
   'guest' : IDL.Null,
 });
-export const Story = IDL.Record({
+export const QuestionSticker = IDL.Record({
+  'question' : IDL.Text,
+  'answers' : IDL.Vec(
+    IDL.Record({ 'answer' : IDL.Text, 'viewer' : IDL.Principal })
+  ),
+});
+export const PollSticker = IDL.Record({
+  'question' : IDL.Text,
+  'votesA' : IDL.Vec(IDL.Principal),
+  'votesB' : IDL.Vec(IDL.Principal),
+  'optionA' : IDL.Text,
+  'optionB' : IDL.Text,
+});
+export const StorySticker = IDL.Variant({
+  'question' : QuestionSticker,
+  'poll' : PollSticker,
+});
+export const StoryReaction = IDL.Record({
+  'emoji' : IDL.Text,
+  'viewer' : IDL.Principal,
+});
+export const StoryView = IDL.Record({
   'id' : IDL.Nat,
+  'authorUsername' : IDL.Text,
   'imageBlobKey' : IDL.Text,
+  'viewerList' : IDL.Vec(IDL.Principal),
   'createdAt' : IDL.Int,
+  'authorAvatarBlobKey' : IDL.Text,
+  'videoBlobKey' : IDL.Text,
   'author' : IDL.Principal,
+  'sticker' : IDL.Opt(StorySticker),
+  'reactions' : IDL.Vec(StoryReaction),
 });
 export const Profile = IDL.Record({
   'bio' : IDL.Text,
@@ -36,6 +63,8 @@ export const Profile = IDL.Record({
   'avatarBlobKey' : IDL.Text,
   'owner' : IDL.Principal,
   'createdAt' : IDL.Int,
+  'website' : IDL.Text,
+  'location' : IDL.Text,
 });
 export const Comment = IDL.Record({
   'id' : IDL.Nat,
@@ -66,6 +95,14 @@ export const PostView = IDL.Record({
   'caption' : IDL.Text,
   'commentCount' : IDL.Nat,
   'likedByMe' : IDL.Bool,
+});
+export const Highlight = IDL.Record({
+  'id' : IDL.Nat,
+  'title' : IDL.Text,
+  'owner' : IDL.Principal,
+  'createdAt' : IDL.Int,
+  'coverBlobKey' : IDL.Text,
+  'storyIds' : IDL.Vec(IDL.Nat),
 });
 export const NotificationType = IDL.Variant({
   'like' : IDL.Null,
@@ -125,16 +162,20 @@ export const idlService = IDL.Service({
   '_caffeineStorageUpdateGatewayPrincipals' : IDL.Func([], [], []),
   '_initializeAccessControlWithSecret' : IDL.Func([IDL.Text], [], []),
   'addComment' : IDL.Func([IDL.Nat, IDL.Text], [IDL.Nat], []),
+  'addStoryToHighlight' : IDL.Func([IDL.Nat, IDL.Nat], [IDL.Bool], []),
+  'answerQuestion' : IDL.Func([IDL.Nat, IDL.Text], [], []),
   'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
+  'createHighlight' : IDL.Func([IDL.Text, IDL.Text], [IDL.Nat], []),
   'createPost' : IDL.Func([IDL.Text, IDL.Text], [IDL.Nat], []),
   'createReel' : IDL.Func([IDL.Text, IDL.Text, IDL.Text], [IDL.Nat], []),
-  'createStory' : IDL.Func([IDL.Text], [IDL.Nat], []),
+  'createStory' : IDL.Func([IDL.Text, IDL.Text], [IDL.Nat], []),
   'deleteComment' : IDL.Func([IDL.Nat], [IDL.Bool], []),
+  'deleteHighlight' : IDL.Func([IDL.Nat], [IDL.Bool], []),
   'deleteNotification' : IDL.Func([IDL.Nat], [IDL.Bool], []),
   'deletePost' : IDL.Func([IDL.Nat], [IDL.Bool], []),
   'deleteReel' : IDL.Func([IDL.Nat], [IDL.Bool], []),
   'followUser' : IDL.Func([IDL.Principal], [], []),
-  'getActiveStories' : IDL.Func([], [IDL.Vec(Story)], ['query']),
+  'getActiveStories' : IDL.Func([], [IDL.Vec(StoryView)], ['query']),
   'getCallerUserProfile' : IDL.Func([], [IDL.Opt(Profile)], ['query']),
   'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
   'getComments' : IDL.Func([IDL.Nat], [IDL.Vec(Comment)], ['query']),
@@ -150,16 +191,19 @@ export const idlService = IDL.Service({
       [IDL.Vec(IDL.Principal)],
       ['query'],
     ),
+  'getHighlights' : IDL.Func([IDL.Principal], [IDL.Vec(Highlight)], ['query']),
   'getMessagesWithUser' : IDL.Func(
       [IDL.Principal],
       [IDL.Vec(Message)],
       ['query'],
     ),
+  'getMyHighlights' : IDL.Func([], [IDL.Vec(Highlight)], ['query']),
   'getMyProfile' : IDL.Func([], [IDL.Opt(Profile)], ['query']),
   'getNotifications' : IDL.Func([], [IDL.Vec(Notification)], ['query']),
   'getPost' : IDL.Func([IDL.Nat], [IDL.Opt(PostView)], ['query']),
   'getProfile' : IDL.Func([IDL.Principal], [IDL.Opt(Profile)], ['query']),
   'getReel' : IDL.Func([IDL.Nat], [IDL.Opt(ReelView)], ['query']),
+  'getStoryViewers' : IDL.Func([IDL.Nat], [IDL.Vec(IDL.Principal)], ['query']),
   'getUserProfile' : IDL.Func([IDL.Principal], [IDL.Opt(Profile)], ['query']),
   'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
   'isFollowing' : IDL.Func([IDL.Principal], [IDL.Bool], ['query']),
@@ -170,12 +214,24 @@ export const idlService = IDL.Service({
   'listReels' : IDL.Func([], [IDL.Vec(ReelView)], ['query']),
   'markAllNotificationsRead' : IDL.Func([], [], []),
   'markNotificationRead' : IDL.Func([IDL.Nat], [IDL.Bool], []),
-  'saveCallerUserProfile' : IDL.Func([IDL.Text, IDL.Text, IDL.Text], [], []),
+  'reactToStory' : IDL.Func([IDL.Nat, IDL.Text], [], []),
+  'removeStoryFromHighlight' : IDL.Func([IDL.Nat, IDL.Nat], [IDL.Bool], []),
+  'saveCallerUserProfile' : IDL.Func(
+      [IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Text],
+      [],
+      [],
+    ),
   'sendMessage' : IDL.Func([IDL.Principal, IDL.Text], [IDL.Nat], []),
   'toggleLike' : IDL.Func([IDL.Nat], [IDL.Bool], []),
   'toggleReelLike' : IDL.Func([IDL.Nat], [IDL.Bool], []),
   'unfollowUser' : IDL.Func([IDL.Principal], [], []),
-  'upsertProfile' : IDL.Func([IDL.Text, IDL.Text, IDL.Text], [], []),
+  'upsertProfile' : IDL.Func(
+      [IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Text],
+      [],
+      [],
+    ),
+  'viewStory' : IDL.Func([IDL.Nat], [], []),
+  'votePoll' : IDL.Func([IDL.Nat, IDL.Text], [], []),
 });
 
 export const idlInitArgs = [];
@@ -197,11 +253,38 @@ export const idlFactory = ({ IDL }) => {
     'user' : IDL.Null,
     'guest' : IDL.Null,
   });
-  const Story = IDL.Record({
+  const QuestionSticker = IDL.Record({
+    'question' : IDL.Text,
+    'answers' : IDL.Vec(
+      IDL.Record({ 'answer' : IDL.Text, 'viewer' : IDL.Principal })
+    ),
+  });
+  const PollSticker = IDL.Record({
+    'question' : IDL.Text,
+    'votesA' : IDL.Vec(IDL.Principal),
+    'votesB' : IDL.Vec(IDL.Principal),
+    'optionA' : IDL.Text,
+    'optionB' : IDL.Text,
+  });
+  const StorySticker = IDL.Variant({
+    'question' : QuestionSticker,
+    'poll' : PollSticker,
+  });
+  const StoryReaction = IDL.Record({
+    'emoji' : IDL.Text,
+    'viewer' : IDL.Principal,
+  });
+  const StoryView = IDL.Record({
     'id' : IDL.Nat,
+    'authorUsername' : IDL.Text,
     'imageBlobKey' : IDL.Text,
+    'viewerList' : IDL.Vec(IDL.Principal),
     'createdAt' : IDL.Int,
+    'authorAvatarBlobKey' : IDL.Text,
+    'videoBlobKey' : IDL.Text,
     'author' : IDL.Principal,
+    'sticker' : IDL.Opt(StorySticker),
+    'reactions' : IDL.Vec(StoryReaction),
   });
   const Profile = IDL.Record({
     'bio' : IDL.Text,
@@ -209,6 +292,8 @@ export const idlFactory = ({ IDL }) => {
     'avatarBlobKey' : IDL.Text,
     'owner' : IDL.Principal,
     'createdAt' : IDL.Int,
+    'website' : IDL.Text,
+    'location' : IDL.Text,
   });
   const Comment = IDL.Record({
     'id' : IDL.Nat,
@@ -239,6 +324,14 @@ export const idlFactory = ({ IDL }) => {
     'caption' : IDL.Text,
     'commentCount' : IDL.Nat,
     'likedByMe' : IDL.Bool,
+  });
+  const Highlight = IDL.Record({
+    'id' : IDL.Nat,
+    'title' : IDL.Text,
+    'owner' : IDL.Principal,
+    'createdAt' : IDL.Int,
+    'coverBlobKey' : IDL.Text,
+    'storyIds' : IDL.Vec(IDL.Nat),
   });
   const NotificationType = IDL.Variant({
     'like' : IDL.Null,
@@ -298,16 +391,20 @@ export const idlFactory = ({ IDL }) => {
     '_caffeineStorageUpdateGatewayPrincipals' : IDL.Func([], [], []),
     '_initializeAccessControlWithSecret' : IDL.Func([IDL.Text], [], []),
     'addComment' : IDL.Func([IDL.Nat, IDL.Text], [IDL.Nat], []),
+    'addStoryToHighlight' : IDL.Func([IDL.Nat, IDL.Nat], [IDL.Bool], []),
+    'answerQuestion' : IDL.Func([IDL.Nat, IDL.Text], [], []),
     'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
+    'createHighlight' : IDL.Func([IDL.Text, IDL.Text], [IDL.Nat], []),
     'createPost' : IDL.Func([IDL.Text, IDL.Text], [IDL.Nat], []),
     'createReel' : IDL.Func([IDL.Text, IDL.Text, IDL.Text], [IDL.Nat], []),
-    'createStory' : IDL.Func([IDL.Text], [IDL.Nat], []),
+    'createStory' : IDL.Func([IDL.Text, IDL.Text], [IDL.Nat], []),
     'deleteComment' : IDL.Func([IDL.Nat], [IDL.Bool], []),
+    'deleteHighlight' : IDL.Func([IDL.Nat], [IDL.Bool], []),
     'deleteNotification' : IDL.Func([IDL.Nat], [IDL.Bool], []),
     'deletePost' : IDL.Func([IDL.Nat], [IDL.Bool], []),
     'deleteReel' : IDL.Func([IDL.Nat], [IDL.Bool], []),
     'followUser' : IDL.Func([IDL.Principal], [], []),
-    'getActiveStories' : IDL.Func([], [IDL.Vec(Story)], ['query']),
+    'getActiveStories' : IDL.Func([], [IDL.Vec(StoryView)], ['query']),
     'getCallerUserProfile' : IDL.Func([], [IDL.Opt(Profile)], ['query']),
     'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
     'getComments' : IDL.Func([IDL.Nat], [IDL.Vec(Comment)], ['query']),
@@ -327,16 +424,27 @@ export const idlFactory = ({ IDL }) => {
         [IDL.Vec(IDL.Principal)],
         ['query'],
       ),
+    'getHighlights' : IDL.Func(
+        [IDL.Principal],
+        [IDL.Vec(Highlight)],
+        ['query'],
+      ),
     'getMessagesWithUser' : IDL.Func(
         [IDL.Principal],
         [IDL.Vec(Message)],
         ['query'],
       ),
+    'getMyHighlights' : IDL.Func([], [IDL.Vec(Highlight)], ['query']),
     'getMyProfile' : IDL.Func([], [IDL.Opt(Profile)], ['query']),
     'getNotifications' : IDL.Func([], [IDL.Vec(Notification)], ['query']),
     'getPost' : IDL.Func([IDL.Nat], [IDL.Opt(PostView)], ['query']),
     'getProfile' : IDL.Func([IDL.Principal], [IDL.Opt(Profile)], ['query']),
     'getReel' : IDL.Func([IDL.Nat], [IDL.Opt(ReelView)], ['query']),
+    'getStoryViewers' : IDL.Func(
+        [IDL.Nat],
+        [IDL.Vec(IDL.Principal)],
+        ['query'],
+      ),
     'getUserProfile' : IDL.Func([IDL.Principal], [IDL.Opt(Profile)], ['query']),
     'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
     'isFollowing' : IDL.Func([IDL.Principal], [IDL.Bool], ['query']),
@@ -347,12 +455,24 @@ export const idlFactory = ({ IDL }) => {
     'listReels' : IDL.Func([], [IDL.Vec(ReelView)], ['query']),
     'markAllNotificationsRead' : IDL.Func([], [], []),
     'markNotificationRead' : IDL.Func([IDL.Nat], [IDL.Bool], []),
-    'saveCallerUserProfile' : IDL.Func([IDL.Text, IDL.Text, IDL.Text], [], []),
+    'reactToStory' : IDL.Func([IDL.Nat, IDL.Text], [], []),
+    'removeStoryFromHighlight' : IDL.Func([IDL.Nat, IDL.Nat], [IDL.Bool], []),
+    'saveCallerUserProfile' : IDL.Func(
+        [IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Text],
+        [],
+        [],
+      ),
     'sendMessage' : IDL.Func([IDL.Principal, IDL.Text], [IDL.Nat], []),
     'toggleLike' : IDL.Func([IDL.Nat], [IDL.Bool], []),
     'toggleReelLike' : IDL.Func([IDL.Nat], [IDL.Bool], []),
     'unfollowUser' : IDL.Func([IDL.Principal], [], []),
-    'upsertProfile' : IDL.Func([IDL.Text, IDL.Text, IDL.Text], [], []),
+    'upsertProfile' : IDL.Func(
+        [IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Text],
+        [],
+        [],
+      ),
+    'viewStory' : IDL.Func([IDL.Nat], [], []),
+    'votePoll' : IDL.Func([IDL.Nat, IDL.Text], [], []),
   });
 };
 

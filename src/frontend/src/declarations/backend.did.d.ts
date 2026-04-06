@@ -21,6 +21,14 @@ export interface ConversationPreview {
   'user' : Principal,
   'lastMessage' : [] | [Message],
 }
+export interface Highlight {
+  'id' : bigint,
+  'title' : string,
+  'owner' : Principal,
+  'createdAt' : bigint,
+  'coverBlobKey' : string,
+  'storyIds' : Array<bigint>,
+}
 export interface Message {
   'id' : bigint,
   'content' : string,
@@ -42,6 +50,13 @@ export type NotificationType = { 'like' : null } |
   { 'comment' : null } |
   { 'mention' : null } |
   { 'follow' : null };
+export interface PollSticker {
+  'question' : string,
+  'votesA' : Array<Principal>,
+  'votesB' : Array<Principal>,
+  'optionA' : string,
+  'optionB' : string,
+}
 export interface PostView {
   'id' : bigint,
   'authorUsername' : string,
@@ -60,6 +75,12 @@ export interface Profile {
   'avatarBlobKey' : string,
   'owner' : Principal,
   'createdAt' : bigint,
+  'website' : string,
+  'location' : string,
+}
+export interface QuestionSticker {
+  'question' : string,
+  'answers' : Array<{ 'answer' : string, 'viewer' : Principal }>,
 }
 export interface ReelView {
   'id' : bigint,
@@ -73,11 +94,20 @@ export interface ReelView {
   'caption' : string,
   'likedByMe' : boolean,
 }
-export interface Story {
+export interface StoryReaction { 'emoji' : string, 'viewer' : Principal }
+export type StorySticker = { 'question' : QuestionSticker } |
+  { 'poll' : PollSticker };
+export interface StoryView {
   'id' : bigint,
+  'authorUsername' : string,
   'imageBlobKey' : string,
+  'viewerList' : Array<Principal>,
   'createdAt' : bigint,
+  'authorAvatarBlobKey' : string,
+  'videoBlobKey' : string,
   'author' : Principal,
+  'sticker' : [] | [StorySticker],
+  'reactions' : Array<StoryReaction>,
 }
 export type UserRole = { 'admin' : null } |
   { 'user' : null } |
@@ -111,16 +141,20 @@ export interface _SERVICE {
   '_caffeineStorageUpdateGatewayPrincipals' : ActorMethod<[], undefined>,
   '_initializeAccessControlWithSecret' : ActorMethod<[string], undefined>,
   'addComment' : ActorMethod<[bigint, string], bigint>,
+  'addStoryToHighlight' : ActorMethod<[bigint, bigint], boolean>,
+  'answerQuestion' : ActorMethod<[bigint, string], undefined>,
   'assignCallerUserRole' : ActorMethod<[Principal, UserRole], undefined>,
+  'createHighlight' : ActorMethod<[string, string], bigint>,
   'createPost' : ActorMethod<[string, string], bigint>,
   'createReel' : ActorMethod<[string, string, string], bigint>,
-  'createStory' : ActorMethod<[string], bigint>,
+  'createStory' : ActorMethod<[string, string], bigint>,
   'deleteComment' : ActorMethod<[bigint], boolean>,
+  'deleteHighlight' : ActorMethod<[bigint], boolean>,
   'deleteNotification' : ActorMethod<[bigint], boolean>,
   'deletePost' : ActorMethod<[bigint], boolean>,
   'deleteReel' : ActorMethod<[bigint], boolean>,
   'followUser' : ActorMethod<[Principal], undefined>,
-  'getActiveStories' : ActorMethod<[], Array<Story>>,
+  'getActiveStories' : ActorMethod<[], Array<StoryView>>,
   'getCallerUserProfile' : ActorMethod<[], [] | [Profile]>,
   'getCallerUserRole' : ActorMethod<[], UserRole>,
   'getComments' : ActorMethod<[bigint], Array<Comment>>,
@@ -128,12 +162,15 @@ export interface _SERVICE {
   'getFeed' : ActorMethod<[bigint], Array<PostView>>,
   'getFollowers' : ActorMethod<[Principal], Array<Principal>>,
   'getFollowing' : ActorMethod<[Principal], Array<Principal>>,
+  'getHighlights' : ActorMethod<[Principal], Array<Highlight>>,
   'getMessagesWithUser' : ActorMethod<[Principal], Array<Message>>,
+  'getMyHighlights' : ActorMethod<[], Array<Highlight>>,
   'getMyProfile' : ActorMethod<[], [] | [Profile]>,
   'getNotifications' : ActorMethod<[], Array<Notification>>,
   'getPost' : ActorMethod<[bigint], [] | [PostView]>,
   'getProfile' : ActorMethod<[Principal], [] | [Profile]>,
   'getReel' : ActorMethod<[bigint], [] | [ReelView]>,
+  'getStoryViewers' : ActorMethod<[bigint], Array<Principal>>,
   'getUserProfile' : ActorMethod<[Principal], [] | [Profile]>,
   'isCallerAdmin' : ActorMethod<[], boolean>,
   'isFollowing' : ActorMethod<[Principal], boolean>,
@@ -144,12 +181,22 @@ export interface _SERVICE {
   'listReels' : ActorMethod<[], Array<ReelView>>,
   'markAllNotificationsRead' : ActorMethod<[], undefined>,
   'markNotificationRead' : ActorMethod<[bigint], boolean>,
-  'saveCallerUserProfile' : ActorMethod<[string, string, string], undefined>,
+  'reactToStory' : ActorMethod<[bigint, string], undefined>,
+  'removeStoryFromHighlight' : ActorMethod<[bigint, bigint], boolean>,
+  'saveCallerUserProfile' : ActorMethod<
+    [string, string, string, string, string],
+    undefined
+  >,
   'sendMessage' : ActorMethod<[Principal, string], bigint>,
   'toggleLike' : ActorMethod<[bigint], boolean>,
   'toggleReelLike' : ActorMethod<[bigint], boolean>,
   'unfollowUser' : ActorMethod<[Principal], undefined>,
-  'upsertProfile' : ActorMethod<[string, string, string], undefined>,
+  'upsertProfile' : ActorMethod<
+    [string, string, string, string, string],
+    undefined
+  >,
+  'viewStory' : ActorMethod<[bigint], undefined>,
+  'votePoll' : ActorMethod<[bigint, string], undefined>,
 }
 export declare const idlService: IDL.ServiceClass;
 export declare const idlInitArgs: IDL.Type[];

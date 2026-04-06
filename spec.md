@@ -1,36 +1,56 @@
-# Instagram Clone - Phase 3: Real Reels + Live Messages
+# Instagram Clone - Phase 5: Stories System + Advanced Profile
 
 ## Current State
-- Phase 1 & 2 deployed: Auth, Home Feed, Stories, Create Post (with blob storage for images), Profile, Reels (static mock videos), Messages (static mock conversations), Notifications, Settings
-- Backend has: User, Post, Story, Comment, Like, Follow, Message, Notification APIs
-- Blob storage already integrated for image uploads (CreateScreen uses StorageClient)
-- ReelsScreen shows hardcoded sample videos from external URLs
-- MessagesScreen shows hardcoded mock conversations; sendMessage backend call is commented out (no real principal resolution)
-- getConversations() is fetched but result is unused (conversations list shows mocks)
+- Backend: Full Motoko canister with profiles, posts, reels, stories (basic), comments, follows, messages, notifications
+- Stories: Basic `createStory(imageBlobKey)` and `getActiveStories()` - image only, no reactions, no viewer tracking, no highlights
+- Profile: Text-only edit (username, bio) - no avatar photo upload, no website/location fields, no tabs for Reels/Tagged/Saved
+- StoriesRow: Displays story bubbles but tapping does nothing - no story viewer modal
+- ProfileScreen: Basic stats (posts/followers/following), text profile edit, post grid
 
 ## Requested Changes (Diff)
 
 ### Add
-- `Reel` type in Motoko backend: id, author, videoBlobKey, caption, audioLabel, createdAt
-- `createReel(videoBlobKey, caption, audioLabel)` backend method
-- `listReels()` backend method returning ReelView (with author info, likeCount, likedByMe)
-- `toggleReelLike(reelId)` backend method
-- `ReelView` type with authorUsername, authorAvatarBlobKey, likeCount, likedByMe fields
-- Upload Reel button/flow in ReelsScreen: video file picker, upload to blob storage, submit to backend
-- ReelsScreen now fetches real reels from backend, falls back to mock content when empty
-- MessagesScreen fully wired to backend: getConversations() drives conversation list, messages sent via sendMessage(), getMessagesWithUser() loads thread
-- New conversation flow: search users from listProfiles() and start a conversation
-- Polling for new messages every 5s when inside a chat thread
+- **Story viewer modal**: Full-screen story viewer with progress bar (auto-advance 5s), tap left/right navigation, close button, author info
+- **Story creation sheet**: Upload image OR video, preview before posting, caption/text overlay support
+- **Story reactions**: Preset emoji reactions (❤️ 😂 😮 😢 😡 👏) displayed as floating reactions when viewing a story
+- **Story reply (DM)**: Send a DM reply directly from the story viewer to the story author
+- **Story viewer tracking**: Author can see who viewed their story ("Seen by X" list)
+- **Story expiry**: Backend already filters by 24h; frontend indicates "expired" visually
+- **Story highlights**: Users can save stories to named highlight collections shown on their profile page
+- **Poll stickers**: Simple yes/no or two-option poll sticker in story creation
+- **Question sticker**: Text question sticker in story creation
+- **Advanced Profile**: 
+  - Profile photo upload using blob storage
+  - Website and location fields
+  - Profile tabs: Posts / Reels / Tagged / Saved
+  - Story highlights row on profile
+  - Edit profile sheet (full form)
+  - Blue tick verification badge if user is verified
 
 ### Modify
-- ReelsScreen: merge backend reels with mock content (backend first, mocks as fallback filler)
-- MessagesScreen: replace MOCK_CONVERSATIONS with real backend data; ChatThread fetches real message history and sends via actor
-- Backend main.mo: add Reel state and CRUD methods, add markAllNotificationsRead convenience method
+- `StoriesRow`: Make story bubbles tappable (open story viewer)
+- `ProfileScreen`: Add avatar upload, extra fields, tabs, highlights row
+- `createStory` backend: Extend Story type to support videoBlobKey, reactions, viewer list, highlights
+- `upsertProfile` backend: Add website and location fields to Profile type
+- Backend `getActiveStories`: Return StoryView with author username and avatar
 
 ### Remove
-- Nothing removed (mock fallbacks kept so app is never empty)
+- Nothing removed (backward compatible)
 
 ## Implementation Plan
-1. Update Motoko backend: add Reel type, createReel, listReels (with ReelView), toggleReelLike
-2. Update ReelsScreen: add upload FAB, video file picker, blob storage upload flow, fetch real reels from backend, merge with mocks
-3. Update MessagesScreen: wire conversation list to getConversations() + listProfiles() for display names, wire ChatThread to getMessagesWithUser() + sendMessage(), add new conversation modal with user search, add 5s polling for new messages in open thread
+1. Update Motoko backend:
+   - Extend `Profile` with `website`, `location` fields
+   - Extend `Story` with `videoBlobKey`, `viewerList`, `reactions`, `sticker` (optional poll/question data)
+   - Add `StoryView` type with author info resolved
+   - Add `getActiveStories()` returning `[StoryView]`
+   - Add `viewStory(id)` - records caller as viewer
+   - Add `reactToStory(id, emoji)` - stores reaction
+   - Add story highlights: `Highlight` type, `createHighlight`, `addStoryToHighlight`, `getHighlights`
+   - Update `upsertProfile` to accept website + location
+
+2. Update frontend:
+   - `StoriesRow`: Add onClick handler, open full-screen viewer modal
+   - New `StoryViewer` component: progress bar, tap nav, reactions bar, reply input, viewer list (for own stories)
+   - New `StoryCreate` sheet: file input (image/video), preview, poll/question sticker options
+   - `ProfileScreen`: Avatar upload via blob storage, website/location fields, tabs (Posts/Reels/Tagged/Saved), highlights row
+   - `HomeScreen`: Connect story "Your story" button to story creation sheet
